@@ -84,6 +84,24 @@
 
   .empty{text-align:center;color:var(--text-muted);font-size:13.5px;padding:40px 20px;line-height:1.6;}
 
+  .recap-cat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-m);padding:14px 16px;margin-bottom:10px;}
+  .recap-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;}
+  .recap-head .l{display:flex;align-items:center;gap:10px;font-size:14.5px;font-weight:600;}
+  .recap-head .r{text-align:right;}
+  .recap-head .amt{font-size:14.5px;font-weight:700;}
+  .recap-head .pct{font-size:11.5px;color:var(--text-muted);margin-top:2px;}
+  .recap-track{height:5px;background:var(--line);border-radius:3px;margin-top:10px;overflow:hidden;}
+  .recap-track > div{height:100%;border-radius:3px;}
+  .recap-tx-list{margin-top:10px;border-top:1px solid var(--line);padding-top:4px;display:none;}
+  .recap-cat.open .recap-tx-list{display:block;}
+  .recap-cat.open .recap-chevron{transform:rotate(180deg);}
+  .recap-chevron{transition:transform .2s;color:var(--text-muted);font-size:11px;}
+  .recap-tx-row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;}
+  .recap-tx-row:last-child{border-bottom:none;}
+  .recap-tx-row .d{color:var(--text-muted);flex:0 0 66px;}
+  .recap-tx-row .n{flex:1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .recap-tx-row .a{font-weight:600;white-space:nowrap;}
+
   .filter-row{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;}
   .chip{flex:0 0 auto;padding:8px 14px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:12.5px;color:var(--text-muted);cursor:pointer;}
   .chip.active{background:var(--gold-dim);border-color:var(--gold);color:var(--gold);}
@@ -164,8 +182,8 @@
     <div class="card"><div class="lab">Pengeluaran bulan ini</div><div class="val expense num" id="home-expense">Rp 0</div></div>
   </div>
 
-  <div class="section-title">Transaksi Terbaru</div>
-  <div id="home-recent-list"></div>
+  <div class="section-title">Rekapan per Kategori</div>
+  <div id="home-recap-list"></div>
 </section>
 
 <!-- ===================== KATEGORI ===================== -->
@@ -579,9 +597,50 @@ function renderHome(){
   document.getElementById('home-income').textContent = fmtRp(totals.income);
   document.getElementById('home-expense').textContent = fmtRp(totals.expense);
 
-  const recent = [...STATE.transactions].sort((a,b)=> (b.date+b.createdAt).localeCompare(a.date+a.createdAt)).slice(0,6);
-  document.getElementById('home-recent-list').innerHTML = recent.length ? recent.map(txRowHtml).join('') :
-    `<div class="empty">Belum ada transaksi.<br>Tekan tombol + untuk menambah.</div>`;
+  renderHomeRecap();
+}
+
+const RECAP_COLORS = ['#E8654B','#4F8CE8','#E84FA0','#8C6BE8','#4FD1AE','#E8B84B','#6BE87A','#E8DA4F'];
+
+function renderHomeRecap(){
+  const txs = txInMonth(STATE.currentMonth).filter(t=>t.type==='expense');
+  const totalExpense = txs.reduce((s,t)=>s+Number(t.amount),0);
+  const byCat = {};
+  txs.forEach(t=>{ (byCat[t.categoryId] = byCat[t.categoryId]||[]).push(t); });
+  const entries = Object.entries(byCat)
+    .map(([id, list])=>({ id, list, total: list.reduce((s,t)=>s+Number(t.amount),0) }))
+    .sort((a,b)=>b.total-a.total);
+
+  const wrap = document.getElementById('home-recap-list');
+  if(!entries.length){
+    wrap.innerHTML = `<div class="empty">Belum ada pengeluaran bulan ini.<br>Tekan tombol + untuk menambah.</div>`;
+    return;
+  }
+  wrap.innerHTML = entries.map((entry, i)=>{
+    const c = catById(entry.id);
+    const pct = totalExpense>0 ? (entry.total/totalExpense*100) : 0;
+    const color = RECAP_COLORS[i % RECAP_COLORS.length];
+    const rowId = 'recap_' + (entry.id || 'none');
+    const sortedList = [...entry.list].sort((a,b)=> b.date.localeCompare(a.date));
+    return `<div class="recap-cat" id="${rowId}">
+      <div class="recap-head" onclick="toggleRecap('${rowId}')">
+        <div class="l">${c?c.icon:'🏷️'} ${c?c.name:'Tanpa Kategori'} <span class="recap-chevron">▾</span></div>
+        <div class="r"><div class="amt" style="color:${color}">${fmtRp(entry.total)}</div><div class="pct">${pct.toFixed(1)}%</div></div>
+      </div>
+      <div class="recap-track"><div style="width:${pct}%;background:${color}"></div></div>
+      <div class="recap-tx-list">
+        ${sortedList.map(t=>`<div class="recap-tx-row" onclick="event.stopPropagation();openTxSheet('${t.id}')">
+          <div class="d">${new Date(t.date).toLocaleDateString('id-ID',{day:'2-digit',month:'short'})}</div>
+          <div class="n">${t.note || (c?c.name:'—')}</div>
+          <div class="a">${fmtRp(t.amount)}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleRecap(rowId){
+  document.getElementById(rowId).classList.toggle('open');
 }
 
 function txRowHtml(t){

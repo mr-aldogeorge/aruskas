@@ -410,10 +410,21 @@ const ICONS_EXPENSE = ['🍜','☕','🎬','🚌','💊','🐾','👨‍👩‍�
 const ICONS_INCOME = ['💰','🎉','➕','💼','📈','🎁'];
 const ACC_ICONS = ['👛','🏦','📱','💳','🐖','💵'];
 
+// Selalu pakai komponen tanggal LOKAL (bukan toISOString/valueAsDate yang
+// berbasis UTC) — supaya tidak salah geser hari/bulan di zona waktu +UTC
+// seperti WIB, terutama dini hari (00:00–06:59) atau saat ganti bulan.
+function todayLocalStr(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function localYearMonth(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
 let STATE = {
   backendUrl: localStorage.getItem('arus_backend_url') || '',
   transactions: [], categories: [], accounts: [], budgets: [], recurring: [],
-  currentMonth: new Date().toISOString().slice(0,7), // YYYY-MM
+  currentMonth: localYearMonth(new Date()), // YYYY-MM
   catFilter: 'expense',
   txAccountFilter: 'all',
   txType: 'expense', editingTxId: null,
@@ -483,8 +494,8 @@ async function loadAll(){
 // INIT / SETUP SCREEN
 // ===================================================================
 function init(){
-  document.getElementById('tx-date').valueAsDate = new Date();
-  document.getElementById('recn-start').valueAsDate = new Date();
+  document.getElementById('tx-date').value = todayLocalStr();
+  document.getElementById('recn-start').value = todayLocalStr();
   if(!STATE.backendUrl){
     showOnly('screen-setup');
     document.getElementById('bottom-nav').style.display = 'none';
@@ -531,7 +542,10 @@ function goTo(name){
 function shiftMonth(delta){
   const [y,m] = STATE.currentMonth.split('-').map(Number);
   const d = new Date(y, m-1+delta, 1);
-  STATE.currentMonth = d.toISOString().slice(0,7);
+  // Jangan pakai toISOString() — itu konversi ke UTC dan bisa menggeser
+  // bulan mundur satu langkah tambahan di zona waktu +UTC (mis. WIB).
+  // Ambil komponen tahun/bulan langsung dari objek Date lokal.
+  STATE.currentMonth = localYearMonth(d);
   renderAll();
 }
 
@@ -795,7 +809,7 @@ function populateSelects(){
   refreshRecCategoryOptions();
 }
 function refreshTxCategoryOptions(){
-  const dateVal = document.getElementById('tx-date').value || new Date().toISOString().slice(0,10);
+  const dateVal = document.getElementById('tx-date').value || todayLocalStr();
   const month = dateVal.slice(0,7);
   const cats = STATE.categories.filter(c=>c.type===STATE.txType);
   document.getElementById('tx-category').innerHTML = cats.map(c=>{
@@ -834,7 +848,7 @@ function openTxSheet(id){
   } else {
     setTxType('expense');
     document.getElementById('tx-amount').value = '';
-    document.getElementById('tx-date').valueAsDate = new Date();
+    document.getElementById('tx-date').value = todayLocalStr();
     document.getElementById('tx-note').value = '';
   }
   document.getElementById('sheet-tx').classList.add('open');
@@ -950,7 +964,7 @@ async function deleteRecurringItem(id){
 function openRecurringNew(){
   document.getElementById('recn-title').value='';
   document.getElementById('recn-amount').value='';
-  document.getElementById('recn-start').valueAsDate = new Date();
+  document.getElementById('recn-start').value = todayLocalStr();
   setRecNewType('expense');
   document.getElementById('recn-frequency').value='monthly';
   onRecFreqChange();
@@ -999,7 +1013,7 @@ function renderStats(){
   // Trend 6 bulan
   const months = [];
   const [y0,m0] = STATE.currentMonth.split('-').map(Number);
-  for(let i=5;i>=0;i--){ const d = new Date(y0,m0-1-i,1); months.push(d.toISOString().slice(0,7)); }
+  for(let i=5;i>=0;i--){ const d = new Date(y0,m0-1-i,1); months.push(localYearMonth(d)); }
   const incomeData = months.map(m=>monthTotals(m).income);
   const expenseData = months.map(m=>monthTotals(m).expense);
   const labels = months.map(m=>monthLabel(m).split(' ')[0].slice(0,3));

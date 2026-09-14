@@ -103,6 +103,18 @@
   .recap-tx-row .n{flex:1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .recap-tx-row .a{font-weight:600;white-space:nowrap;}
 
+  .debt-item{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-m);padding:14px 16px;margin-bottom:10px;cursor:pointer;}
+  .debt-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .debt-name{font-size:14.5px;font-weight:600;}
+  .debt-badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;display:inline-block;margin-left:6px;vertical-align:middle;}
+  .debt-badge.utang{background:var(--gold-dim);color:var(--danger);}
+  .debt-badge.piutang{background:var(--teal-dim);color:var(--teal);}
+  .debt-amt{font-size:14.5px;font-weight:700;text-align:right;}
+  .debt-sub{font-size:11.5px;color:var(--text-muted);margin-top:3px;}
+  .debt-sub.overdue{color:var(--danger);font-weight:600;}
+  .debt-progress{height:5px;background:var(--line);border-radius:3px;margin-top:10px;overflow:hidden;}
+  .debt-progress > div{height:100%;background:var(--gold);}
+
   .filter-row{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;}
   .chip{flex:0 0 auto;padding:8px 14px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:12.5px;color:var(--text-muted);cursor:pointer;}
   .chip.active{background:var(--gold-dim);border-color:var(--gold);color:var(--gold);}
@@ -182,6 +194,13 @@
     <div class="card"><div class="lab">Pemasukan bulan ini</div><div class="val income num" id="home-income">Rp 0</div></div>
     <div class="card"><div class="lab">Pengeluaran bulan ini</div><div class="val expense num" id="home-expense">Rp 0</div></div>
   </div>
+
+  <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+    <span>Utang &amp; Piutang</span>
+    <span style="color:var(--gold);font-size:12.5px;font-weight:600;cursor:pointer;" onclick="openDebtNew()">+ Tambah</span>
+  </div>
+  <div class="grid2" id="debt-summary-grid"></div>
+  <div id="debt-list"></div>
 
   <div class="section-title">Rekapan per Kategori</div>
   <div id="home-recap-list"></div>
@@ -402,6 +421,54 @@
   </div>
 </div>
 
+<!-- ===================== SHEET: TAMBAH UTANG/PIUTANG ===================== -->
+<div class="sheet-overlay" id="sheet-debt-new">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>Utang / Piutang Baru</h2>
+    <div class="toggle-row">
+      <div class="opt expense active" id="debtn-type-utang" onclick="setDebtNewType('utang')">Utang Saya</div>
+      <div class="opt income" id="debtn-type-piutang" onclick="setDebtNewType('piutang')">Piutang Saya</div>
+    </div>
+    <div class="sub" style="margin-top:8px;" id="debtn-hint">Saya berutang ke orang ini</div>
+    <label class="field">Nama Orang</label>
+    <input type="text" id="debtn-person" placeholder="Contoh: Budi">
+    <label class="field">Jumlah (Rp)</label>
+    <input type="number" id="debtn-amount" placeholder="0" inputmode="numeric">
+    <label class="field">Jatuh Tempo (opsional)</label>
+    <input type="date" id="debtn-duedate">
+    <label class="field">Catatan (opsional)</label>
+    <input type="text" id="debtn-note" placeholder="Contoh: pinjaman untuk beli laptop">
+    <button class="btn btn-primary" style="margin-top:22px;" onclick="createDebt()">Simpan</button>
+  </div>
+</div>
+
+<!-- ===================== SHEET: DETAIL / BAYAR UTANG-PIUTANG ===================== -->
+<div class="sheet-overlay" id="sheet-debt-detail">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2 id="debtd-title">Detail</h2>
+    <div class="sub" id="debtd-sub"></div>
+    <div class="debt-progress" style="margin:14px 0;"><div id="debtd-progress-bar" style="width:0%"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-muted);margin-bottom:6px;">
+      <span id="debtd-paid-label">Terbayar: Rp 0</span><span id="debtd-remaining-label">Sisa: Rp 0</span>
+    </div>
+
+    <div id="debtd-pay-section">
+      <label class="field">Jumlah Dibayar Sekarang (Rp)</label>
+      <input type="number" id="debtd-pay-amount" inputmode="numeric">
+      <label class="field" id="debtd-account-label">Akun (uang masuk ke)</label>
+      <select id="debtd-pay-account"></select>
+      <label class="field">Tanggal</label>
+      <input type="date" id="debtd-pay-date">
+      <button class="btn btn-primary" style="margin-top:18px;" onclick="submitDebtPayment()">Catat Pembayaran</button>
+    </div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn btn-danger" onclick="deleteDebtConfirm()">Hapus Catatan</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ===================================================================
 // STATE
@@ -423,7 +490,7 @@ function localYearMonth(d){
 
 let STATE = {
   backendUrl: localStorage.getItem('arus_backend_url') || '',
-  transactions: [], categories: [], accounts: [], budgets: [], recurring: [],
+  transactions: [], categories: [], accounts: [], budgets: [], recurring: [], debts: [],
   currentMonth: localYearMonth(new Date()), // YYYY-MM
   catFilter: 'expense',
   txAccountFilter: 'all',
@@ -432,6 +499,7 @@ let STATE = {
   editingCatId: null,
   accIcon: ACC_ICONS[0], editingAccId: null,
   recNewType: 'expense', editingRecId: null,
+  debtNewType: 'utang', editingDebtId: null,
 };
 
 function toast(msg){
@@ -474,6 +542,7 @@ async function loadAll(){
     STATE.accounts = data.accounts || [];
     STATE.budgets = data.budgets || [];
     STATE.recurring = data.recurring || [];
+    STATE.debts = data.debts || [];
     localStorage.setItem('arus_cache', JSON.stringify(data));
     renderAll();
   }catch(err){
@@ -482,6 +551,7 @@ async function loadAll(){
       const data = JSON.parse(cached);
       STATE.transactions = data.transactions||[]; STATE.categories = data.categories||[];
       STATE.accounts = data.accounts||[]; STATE.budgets = data.budgets||[]; STATE.recurring = data.recurring||[];
+      STATE.debts = data.debts||[];
       renderAll();
       toast('Offline — menampilkan data tersimpan terakhir');
     } else {
@@ -614,6 +684,7 @@ function renderHome(){
   document.getElementById('home-month-label').textContent = monthLabel(STATE.currentMonth);
   document.getElementById('home-total-balance').textContent = fmtRp(totalBalance());
   document.getElementById('home-total-balance').className = 'amount num' + (totalBalance()<0?' neg':'');
+  renderDebts();
 
   const row = document.getElementById('home-accounts-row');
   row.innerHTML = STATE.accounts.map(a=>`
@@ -631,6 +702,112 @@ function renderHome(){
 }
 
 const RECAP_COLORS = ['#E8654B','#4F8CE8','#E84FA0','#8C6BE8','#4FD1AE','#E8B84B','#6BE87A','#E8DA4F'];
+
+// ===================================================================
+// UTANG & PIUTANG
+// ===================================================================
+function debtRemaining(d){ return Number(d.amount) - Number(d.paidAmount||0); }
+function isDebtPaid(d){ return debtRemaining(d) <= 0; }
+function isDebtOverdue(d){ return d.dueDate && d.dueDate < todayLocalStr() && !isDebtPaid(d); }
+
+function renderDebts(){
+  const active = STATE.debts.filter(d=>!isDebtPaid(d));
+  const totalPiutang = active.filter(d=>d.type==='piutang').reduce((s,d)=>s+debtRemaining(d),0);
+  const totalUtang = active.filter(d=>d.type==='utang').reduce((s,d)=>s+debtRemaining(d),0);
+
+  document.getElementById('debt-summary-grid').innerHTML = `
+    <div class="card"><div class="lab">Piutang (orang ke saya)</div><div class="val num" style="color:var(--teal)">${fmtRp(totalPiutang)}</div></div>
+    <div class="card"><div class="lab">Utang (saya ke orang)</div><div class="val num" style="color:var(--danger)">${fmtRp(totalUtang)}</div></div>`;
+
+  const sorted = [...active].sort((a,b)=>{
+    const oa = isDebtOverdue(a), ob = isDebtOverdue(b);
+    if(oa!==ob) return oa? -1 : 1;
+    return (a.dueDate||'9999').localeCompare(b.dueDate||'9999');
+  });
+
+  const list = document.getElementById('debt-list');
+  if(!sorted.length){ list.innerHTML = ''; return; }
+  list.innerHTML = sorted.map(d=>{
+    const remaining = debtRemaining(d);
+    const pct = Math.min(100, (Number(d.paidAmount||0)/Number(d.amount))*100);
+    const overdue = isDebtOverdue(d);
+    const dueLabel = d.dueDate ? new Date(d.dueDate).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'}) : 'Tanpa jatuh tempo';
+    return `<div class="debt-item" onclick="openDebtDetail('${d.id}')">
+      <div class="debt-top">
+        <div>
+          <span class="debt-name">${d.person}</span>
+          <span class="debt-badge ${d.type}">${d.type==='utang'?'Utang':'Piutang'}</span>
+          <div class="debt-sub ${overdue?'overdue':''}">${overdue?'⚠️ Lewat jatuh tempo — ':''}${dueLabel}</div>
+        </div>
+        <div class="debt-amt" style="color:${d.type==='utang'?'var(--danger)':'var(--teal)'}">${fmtRp(remaining)}</div>
+      </div>
+      <div class="debt-progress"><div style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function setDebtNewType(type){
+  STATE.debtNewType = type;
+  document.getElementById('debtn-type-utang').classList.toggle('active', type==='utang');
+  document.getElementById('debtn-type-piutang').classList.toggle('active', type==='piutang');
+  document.getElementById('debtn-hint').textContent = type==='utang' ? 'Saya berutang ke orang ini' : 'Orang ini berutang ke saya';
+}
+function openDebtNew(){
+  document.getElementById('debtn-person').value = '';
+  document.getElementById('debtn-amount').value = '';
+  document.getElementById('debtn-duedate').value = '';
+  document.getElementById('debtn-note').value = '';
+  setDebtNewType('utang');
+  document.getElementById('sheet-debt-new').classList.add('open');
+}
+async function createDebt(){
+  const person = document.getElementById('debtn-person').value.trim();
+  const amount = Number(document.getElementById('debtn-amount').value);
+  if(!person || !amount){ toast('Lengkapi nama orang dan jumlah'); return; }
+  const payload = {
+    type: STATE.debtNewType, person, amount,
+    dueDate: document.getElementById('debtn-duedate').value || '',
+    note: document.getElementById('debtn-note').value.trim(),
+  };
+  try{
+    await apiPost('addDebt', payload);
+    closeAllSheets(); toast('Catatan disimpan'); await loadAll();
+  }catch(e){ toast('Gagal: '+e.message); }
+}
+
+function openDebtDetail(id){
+  const d = STATE.debts.find(x=>x.id===id);
+  STATE.editingDebtId = id;
+  const remaining = debtRemaining(d);
+  document.getElementById('debtd-title').textContent = d.person;
+  document.getElementById('debtd-sub').textContent = (d.type==='utang'?'Utang saya':'Piutang saya') + (d.note ? ' — '+d.note : '');
+  const pct = Math.min(100, (Number(d.paidAmount||0)/Number(d.amount))*100);
+  document.getElementById('debtd-progress-bar').style.width = pct + '%';
+  document.getElementById('debtd-paid-label').textContent = 'Terbayar: ' + fmtRp(d.paidAmount||0);
+  document.getElementById('debtd-remaining-label').textContent = 'Sisa: ' + fmtRp(remaining);
+  document.getElementById('debtd-account-label').textContent = d.type==='piutang' ? 'Akun (uang masuk ke)' : 'Akun (uang keluar dari)';
+  document.getElementById('debtd-pay-amount').value = remaining;
+  document.getElementById('debtd-pay-date').value = todayLocalStr();
+  document.getElementById('debtd-pay-section').style.display = remaining>0 ? 'block' : 'none';
+  document.getElementById('sheet-debt-detail').classList.add('open');
+}
+async function submitDebtPayment(){
+  const amount = Number(document.getElementById('debtd-pay-amount').value);
+  if(!amount || amount<=0){ toast('Jumlah tidak valid'); return; }
+  const accountId = document.getElementById('debtd-pay-account').value;
+  const date = document.getElementById('debtd-pay-date').value;
+  try{
+    await apiPost('payDebt', { id: STATE.editingDebtId, amount, accountId, date });
+    closeAllSheets(); toast('Pembayaran dicatat'); await loadAll();
+  }catch(e){ toast('Gagal: '+e.message); }
+}
+async function deleteDebtConfirm(){
+  if(!confirm('Hapus catatan ini? Transaksi pembayaran yang sudah tercatat tidak ikut terhapus.')) return;
+  try{
+    await apiPost('deleteDebt', {id: STATE.editingDebtId});
+    closeAllSheets(); toast('Catatan dihapus'); await loadAll();
+  }catch(e){ toast('Gagal: '+e.message); }
+}
 
 function renderHomeRecap(){
   const txs = txInMonth(STATE.currentMonth).filter(t=>t.type==='expense');
@@ -805,6 +982,7 @@ function populateSelects(){
   const accOptions = STATE.accounts.map(a=>`<option value="${a.id}">${a.icon} ${a.name}</option>`).join('');
   document.getElementById('tx-account').innerHTML = accOptions;
   document.getElementById('recn-account').innerHTML = accOptions;
+  document.getElementById('debtd-pay-account').innerHTML = accOptions;
   refreshTxCategoryOptions();
   refreshRecCategoryOptions();
 }

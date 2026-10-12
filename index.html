@@ -325,7 +325,10 @@
 <section class="screen active" id="screen-home">
   <div class="top">
     <h1>ARUS</h1>
-    <div class="icon-btn" onclick="openSettings()">⚙️</div>
+    <div style="display:flex;gap:8px;">
+      <div class="icon-btn" data-theme-btn onclick="arusToggleTheme()" role="button" aria-label="Ganti mode gelap/terang" title="Ganti mode gelap/terang">☀️</div>
+      <div class="icon-btn" onclick="openSettings()" role="button" aria-label="Pengaturan">⚙️</div>
+    </div>
   </div>
   <div class="hero">
     <div class="label">Saldo Total</div>

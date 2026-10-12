@@ -221,7 +221,13 @@
   .nx-page .nx-title{font-family:'Sora','Inter',sans-serif;font-size:30px;font-weight:700;line-height:1.25;background:transparent;border:none;border-radius:0;padding:4px 2px;margin-bottom:10px;resize:none;overflow:hidden;color:var(--text);}
   .nx-page .nx-title:focus,.nx-page .nb-t:focus{outline:none;}
   .nb{display:flex;align-items:flex-start;gap:8px;margin:1px 0;}
-  .nx-page .nb-t{flex:1;min-width:0;background:transparent;border:none;border-radius:0;padding:4px 2px;font-size:15.5px;line-height:1.6;resize:none;overflow:hidden;color:var(--text);}
+  .nx-page .nb-t{flex:1;min-width:0;padding:4px 2px;font-size:15.5px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;outline:none;-webkit-user-select:text;user-select:text;cursor:text;min-height:1.6em;}
+  .nb-t[data-empty="1"]::before{content:attr(data-ph);color:var(--text-muted);opacity:.6;float:left;height:0;pointer-events:none;}
+  .nb-t b{font-weight:700;} .nb-t i{font-style:italic;} .nb-t u{text-decoration:underline;text-underline-offset:2px;}
+  .nb-num{flex:0 0 auto;min-width:24px;text-align:right;padding:4px 0;line-height:1.6;font-size:15.5px;color:var(--text-muted);font-variant-numeric:tabular-nums;}
+  .nx-tools .sep{flex:0 0 1px;background:var(--line);margin:4px 3px;}
+  .nx-tools button[data-f="italic"]{font-style:italic;font-family:Georgia,serif;}
+  .nx-tools button[data-f="underline"]{text-decoration:underline;}
   .nb-h1 .nb-t{font-family:'Sora',sans-serif;font-size:24px;font-weight:700;margin-top:10px;}
   .nb-h2 .nb-t{font-family:'Sora',sans-serif;font-size:19px;font-weight:600;margin-top:6px;}
   .nb-q{border-left:3px solid var(--text);padding-left:10px;margin:6px 0;}
@@ -1461,8 +1467,9 @@ const NX_QUOTES = [
   ['Aku tidak gagal. Aku hanya menemukan 10.000 cara yang tidak berhasil.','Thomas Edison'],
   ['Cara terbaik memprediksi masa depan adalah menciptakannya.','Peter Drucker']
 ];
-const NX_TOOLS = [['p','T'],['h1','H1'],['h2','H2'],['todo','☑'],['li','•'],['q','❝']];
-const NX = {items:[], dirty:new Set(), view:'list', tab:'halaman', cur:null, blocks:[], f:null, focus:-1, caret:null, q:'', rm:0, rq:0, last:0, st:'ok', t1:null, t2:null, flushing:false};
+const NX_TOOLS = [['p','T'],['h1','H1'],['h2','H2'],['todo','☑'],['li','•'],['ol','1.'],['q','❝']];
+const NX_FMT = [['bold','B'],['italic','I'],['underline','U']];
+const NX = {rng:null, items:[], dirty:new Set(), view:'list', tab:'halaman', cur:null, blocks:[], f:null, focus:-1, caret:null, q:'', rm:0, rq:0, last:0, st:'ok', t1:null, t2:null, flushing:false};
 
 const nxEsc = (s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nxId = ()=>'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -1612,7 +1619,7 @@ function nxRenderPage(root){
   const p = NX.cur;
   root.innerHTML =
     `<div class="nx-bar"><button class="nx-ib" onclick="nxBack()">‹ Halaman</button><span class="nx-sync"></span><button class="nx-ib" onclick="nxDelPage()">🗑</button></div>
-     <div class="nx-tools" id="nx-tools">${NX_TOOLS.map(t=>`<button data-t="${t[0]}" onclick="nxSetType('${t[0]}')">${t[1]}</button>`).join('')}</div>
+     <div class="nx-tools" id="nx-tools">${NX_TOOLS.map(t=>`<button data-t="${t[0]}" onmousedown="event.preventDefault()" onclick="nxSetType('${t[0]}')">${t[1]}</button>`).join('')}<span class="sep"></span>${NX_FMT.map(t=>`<button data-f="${t[0]}" onmousedown="event.preventDefault()" onclick="nxFmt('${t[0]}')">${t[1]}</button>`).join('')}</div>
      <div class="nx-page">
        <div class="nx-icon" id="nx-icon" onclick="nxPickIcon()">${nxEsc(p.ikon||'📄')}</div>
        <textarea class="nx-title" rows="1" placeholder="Tanpa judul" oninput="nxTitle(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();nxFocusAt(0,0)}">${nxEsc(p.judul)}</textarea>
@@ -1622,29 +1629,87 @@ function nxRenderPage(root){
   nxGrow(root.querySelector('.nx-title')); nxBlocks(); nxStatus(NX.st);
 }
 function nxGrow(t){ if(!t) return; t.style.height='auto'; t.style.height = t.scrollHeight+'px'; }
+// ---------- Teks kaya (bold / italic / underline) ----------
+// b.x = teks polos (untuk pencarian & pratinjau), b.h = HTML aman (<b><i><u>) bila ada format
+function nxSer(root){
+  let x='', fmt=false;
+  const go = (n)=>{
+    let out='';
+    n.childNodes.forEach(c=>{
+      if(c.nodeType===3){ const t=c.nodeValue.replace(/\u00a0/g,' '); x+=t; out+=nxEsc(t); }
+      else if(c.nodeType===1){
+        const tag=c.tagName.toLowerCase(), st=c.style||{};
+        let inner=go(c); if(!inner) return;
+        const tg=[];
+        if(tag==='b'||tag==='strong'||st.fontWeight==='bold'||+st.fontWeight>=600) tg.push('b');
+        if(tag==='i'||tag==='em'||st.fontStyle==='italic') tg.push('i');
+        if(tag==='u'||/underline/.test(st.textDecorationLine||st.textDecoration||'')) tg.push('u');
+        tg.forEach(t=>{ inner='<'+t+'>'+inner+'</'+t+'>'; fmt=true; });
+        out+=inner;
+      }
+    });
+    return out;
+  };
+  const h = go(root);
+  return {x, h: (fmt && x) ? h : undefined};
+}
+function nxHtml(b){
+  if(b.h==null) return nxEsc(b.x);
+  const t=document.createElement('template'); t.innerHTML=String(b.h);   // disaring ulang: hanya b/i/u
+  const r=nxSer(t.content); return r.h!==undefined ? r.h : nxEsc(r.x);
+}
+function nxSel(el){
+  const s=getSelection(); if(!s.rangeCount) return null;
+  const r=s.getRangeAt(0); if(!el.contains(r.startContainer)||!el.contains(r.endContainer)) return null;
+  const pre=document.createRange(); pre.selectNodeContents(el); pre.setEnd(r.startContainer,r.startOffset);
+  const post=document.createRange(); post.selectNodeContents(el); post.setStart(r.endContainer,r.endOffset);
+  const pf=pre.cloneContents(), qf=post.cloneContents();
+  return {collapsed:r.collapsed, pre:pf, post:qf, s:nxSer(pf).x.length, e:nxSer(pf).x.length+(r.collapsed?0:r.toString().length), len:nxSer(el).x.length};
+}
+function nxSetCaret(el,pos){
+  const r=document.createRange(), w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT); let n,left=pos;
+  if(pos==null){ r.selectNodeContents(el); r.collapse(false); }
+  else{
+    let done=false;
+    while((n=w.nextNode())){ const L=n.nodeValue.length; if(left<=L){ r.setStart(n,left); r.collapse(true); done=true; break; } left-=L; }
+    if(!done){ r.selectNodeContents(el); r.collapse(false); }
+  }
+  const s=getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+function nxSync(el){
+  const i=+el.dataset.i, b=NX.blocks[i]; if(!b) return;
+  const r=nxSer(el); b.x=r.x; if(r.h!==undefined) b.h=r.h; else delete b.h;
+  if(r.x) el.removeAttribute('data-empty'); else el.setAttribute('data-empty','1');
+  nxChanged();
+}
 function nxBlocks(){
   const box = document.getElementById('nx-blocks'); if(!box) return;
-  const ph = {h1:'Judul 1', h2:'Judul 2', todo:'Tugas', li:'Daftar', q:'Kutipan'};
+  const ph = {h1:'Judul 1', h2:'Judul 2', todo:'Tugas', li:'Daftar', ol:'Daftar bernomor', q:'Kutipan'};
+  let run = 0;
   box.innerHTML = NX.blocks.map((b,i)=>{
-    const pre = b.t==='todo' ? `<span class="nb-chk ${b.d?'on':''}" onclick="nxToggleB(${i})">✓</span>` : b.t==='li' ? '<span class="nb-dot">•</span>' : '';
-    return `<div class="nb nb-${b.t}${b.d?' done':''}">${pre}<textarea class="nb-t" rows="1" data-i="${i}" placeholder="${ph[b.t]|| (i===0?'Tulis sesuatu…':'')}" oninput="nxIn(this)" onbeforeinput="nxBI(event,this)" onkeydown="nxArrow(event,this)" onfocus="NX.f=${i};nxToolsMark()">${nxEsc(b.x)}</textarea></div>`;
+    run = b.t==='ol' ? run+1 : 0;
+    const pre = b.t==='todo' ? `<span class="nb-chk ${b.d?'on':''}" onclick="nxToggleB(${i})">✓</span>` : b.t==='li' ? '<span class="nb-dot">•</span>' : b.t==='ol' ? `<span class="nb-num">${run}.</span>` : '';
+    return `<div class="nb nb-${b.t}${b.d?' done':''}">${pre}<div class="nb-t" contenteditable="true" role="textbox" aria-multiline="true" data-i="${i}" data-ph="${ph[b.t]|| (i===0?'Tulis sesuatu…':'')}"${b.x?'':' data-empty="1"'} oninput="nxIn(this,event)" onbeforeinput="nxBI(event,this)" onkeydown="nxArrow(event,this)" onpaste="nxPaste(event,this)" ondrop="event.preventDefault()" onfocus="NX.f=${i};nxToolsMark()">${nxHtml(b)}</div></div>`;
   }).join('');
-  box.querySelectorAll('.nb-t').forEach(nxGrow);
   if(NX.focus>=0){
     const t = box.querySelector(`.nb-t[data-i="${NX.focus}"]`);
-    if(t){ t.focus(); const pos = NX.caret==null ? t.value.length : NX.caret; try{ t.setSelectionRange(pos,pos); }catch(e){} }
+    if(t){ t.focus(); nxSetCaret(t, NX.caret); }
     NX.focus = -1; NX.caret = null;
   }
   nxToolsMark();
 }
 function nxToolsMark(){
   const b = NX.blocks[NX.f];
-  document.querySelectorAll('#nx-tools button').forEach(x=>x.classList.toggle('on', !!b && x.dataset.t===b.t));
+  document.querySelectorAll('#nx-tools button[data-t]').forEach(x=>x.classList.toggle('on', !!b && x.dataset.t===b.t));
+  document.querySelectorAll('#nx-tools button[data-f]').forEach(x=>{
+    let on=false; try{ on = !!b && document.queryCommandState(x.dataset.f); }catch(e){}
+    x.classList.toggle('on', on);
+  });
 }
 function nxChanged(){ NX.cur.isi = JSON.stringify(NX.blocks); nxTouch(NX.cur); }
 function nxFocusAt(i, pos){
   const t = document.querySelector(`.nb-t[data-i="${i}"]`); if(!t) return;
-  t.focus(); const p = pos==='end' ? t.value.length : pos; try{ t.setSelectionRange(p,p); }catch(e){}
+  t.focus(); nxSetCaret(t, pos==='end' ? null : pos);
 }
 function nxTitle(t){ NX.cur.judul = t.value; nxGrow(t); nxTouch(NX.cur); }
 function nxPickIcon(){
@@ -1652,42 +1717,97 @@ function nxPickIcon(){
   NX.cur.ikon = Array.from(v.trim())[0] || '📄'; nxTouch(NX.cur);
   document.getElementById('nx-icon').textContent = NX.cur.ikon;
 }
-function nxIn(t){
-  const i = +t.dataset.i, b = NX.blocks[i], v = t.value;
-  const m = v.match(/^(#{1,2}|\[\]|-|\*|>) /);
-  if(m && b.t==='p'){
-    const map = {'#':'h1','##':'h2','[]':'todo','-':'li','*':'li','>':'q'};
-    b.t = map[m[1]]; b.x = v.slice(m[0].length); if(b.t==='todo') b.d = 0;
-    NX.focus = i; NX.caret = 0; nxChanged(); nxBlocks(); return;
+function nxIn(el, e){
+  const i = +el.dataset.i, b = NX.blocks[i]; if(!b) return;
+  const r = nxSer(el);
+  // pintasan markdown: "# ", "## ", "[] ", "- ", "* ", "> ", "1. " — hanya saat spasi barusan diketik di awal baris
+  const m = r.x.match(/^(#{1,2}|\[\]|-|\*|>|\d{1,3}\.) /);
+  if(m && b.t==='p' && r.h===undefined && e && /^insert/.test(e.inputType||'')){
+    const sel = nxSel(el);
+    if(sel && sel.s===m[0].length){
+      const map = {'#':'h1','##':'h2','[]':'todo','-':'li','*':'li','>':'q'};
+      b.t = map[m[1]] || 'ol'; b.x = r.x.slice(m[0].length); delete b.h; if(b.t==='todo') b.d = 0;
+      NX.focus = i; NX.caret = 0; nxChanged(); nxBlocks(); return;
+    }
   }
-  b.x = v; nxGrow(t); nxChanged();
+  nxSync(el);
+}
+function nxMkBlock(b, x, h, after){   // blok baru setelah b (daftar tetap daftar)
+  const keep = (b.t==='todo' || b.t==='li' || b.t==='ol');
+  const nb = {t: keep ? b.t : 'p', x}; if(b.t==='todo' && keep) nb.d = 0; if(h!==undefined) nb.h = h; return nb;
 }
 // Enter & Backspace lewat beforeinput agar jalan di keyboard HP
-function nxBI(e, t){
-  const i = +t.dataset.i, b = NX.blocks[i], s = t.selectionStart, en = t.selectionEnd;
+function nxBI(e, el){
+  const i = +el.dataset.i, b = NX.blocks[i], sel = nxSel(el); if(!b || !sel) return;
   if(e.inputType==='insertParagraph' || e.inputType==='insertLineBreak'){
     e.preventDefault();
-    if((b.t==='todo' || b.t==='li') && !b.x){ b.t = 'p'; delete b.d; NX.focus = i; NX.caret = 0; nxChanged(); nxBlocks(); return; }
-    const after = b.x.slice(en); b.x = b.x.slice(0, s);
-    const keep = (b.t==='todo' || b.t==='li');
-    NX.blocks.splice(i+1, 0, keep ? (b.t==='todo' ? {t:'todo',x:after,d:0} : {t:'li',x:after}) : {t:'p',x:after});
+    if((b.t==='todo' || b.t==='li' || b.t==='ol') && !nxSer(el).x){ b.t = 'p'; delete b.d; delete b.h; b.x=''; NX.focus = i; NX.caret = 0; nxChanged(); nxBlocks(); return; }
+    const pre = nxSer(sel.pre), post = nxSer(sel.post);
+    b.x = pre.x; if(pre.h!==undefined) b.h = pre.h; else delete b.h;
+    NX.blocks.splice(i+1, 0, nxMkBlock(b, post.x, post.h));
     NX.focus = i+1; NX.caret = 0; nxChanged(); nxBlocks();
-  } else if(e.inputType==='deleteContentBackward' && s===0 && en===0){
+  } else if(e.inputType==='deleteContentBackward' && sel.collapsed && sel.s===0){
     if(b.t!=='p'){ e.preventDefault(); b.t = 'p'; delete b.d; NX.focus = i; NX.caret = 0; nxChanged(); nxBlocks(); }
-    else if(i>0){ e.preventDefault(); const prev = NX.blocks[i-1], pos = prev.x.length; prev.x += b.x; NX.blocks.splice(i,1); NX.focus = i-1; NX.caret = pos; nxChanged(); nxBlocks(); }
+    else if(i>0){
+      e.preventDefault();
+      const prev = NX.blocks[i-1], cur = nxSer(el), pos = prev.x.length;
+      const ph = nxHtml(prev), ch = cur.h!==undefined ? cur.h : nxEsc(cur.x);
+      const hasF = prev.h!==undefined || cur.h!==undefined;
+      prev.x += cur.x; if(hasF) prev.h = ph+ch; else delete prev.h;
+      NX.blocks.splice(i,1); NX.focus = i-1; NX.caret = pos; nxChanged(); nxBlocks();
+    }
   }
 }
-function nxArrow(e, t){
-  const i = +t.dataset.i;
-  if(e.key==='ArrowUp' && t.selectionStart===0 && i>0){ e.preventDefault(); nxFocusAt(i-1,'end'); }
-  else if(e.key==='ArrowDown' && t.selectionStart===t.value.length && i<NX.blocks.length-1){ e.preventDefault(); nxFocusAt(i+1,0); }
+// tempel sebagai teks polos; baris berbaris → blok (daftar "1." / "-" dikenali otomatis)
+function nxPaste(e, el){
+  e.preventDefault();
+  const txt = ((e.clipboardData||window.clipboardData).getData('text/plain')||'').replace(/\r/g,'');
+  if(!txt) return;
+  const lines = txt.split('\n');
+  if(lines.length===1){ document.execCommand('insertText', false, txt); return; }
+  const i = +el.dataset.i, b = NX.blocks[i], sel = nxSel(el); if(!b || !sel) return;
+  const pre = nxSer(sel.pre), post = nxSer(sel.post);
+  const mid = lines.filter((l,k)=> k===0 || k===lines.length-1 || l.trim());
+  const kind = (l)=>{ const m = l.match(/^\s*(\d{1,3}[.)]|[-*•])\s+/); return m ? [/^\s*\d/.test(m[1])?'ol':'li', l.slice(m[0].length)] : ['p', l]; };
+  const first = mid[0], rest = mid.slice(1);
+  // baris pertama: gabung ke blok sekarang (atau ubah jenis bila blok kosong)
+  let preH = pre.h!==undefined ? pre.h : nxEsc(pre.x);
+  if(!pre.x && b.t==='p'){ const [t,x] = kind(first); b.t = t; b.x = x; delete b.h; }
+  else { b.x = pre.x + first; b.h = preH + nxEsc(first); if(pre.h===undefined) delete b.h; }
+  const add = rest.map(l=>{ const [t,x]=kind(l); return {t, x}; });
+  const last = add[add.length-1];
+  const caret = last.x.length;
+  last.x += post.x; if(post.h!==undefined) last.h = nxEsc(last.x.slice(0,caret)) + post.h;
+  NX.blocks.splice(i+1, 0, ...add);
+  NX.focus = i+add.length; NX.caret = caret; nxChanged(); nxBlocks();
+}
+function nxArrow(e, el){
+  const i = +el.dataset.i, sel = nxSel(el); if(!sel || !sel.collapsed) return;
+  if(e.key==='ArrowUp' && sel.s===0 && i>0){ e.preventDefault(); nxFocusAt(i-1,'end'); }
+  else if(e.key==='ArrowDown' && sel.s===sel.len && i<NX.blocks.length-1){ e.preventDefault(); nxFocusAt(i+1,0); }
 }
 function nxSetType(type){
   const i = NX.f, b = NX.blocks[i]; if(!b) return;
-  const ta = document.querySelector(`.nb-t[data-i="${i}"]`);
+  const el = document.querySelector(`.nb-t[data-i="${i}"]`);
+  let caret = null;
+  try{ if(el && NX.rng && el.contains(NX.rng.startContainer)){ const a=document.createRange(); a.selectNodeContents(el); a.setEnd(NX.rng.startContainer,NX.rng.startOffset); caret = nxSer(a.cloneContents()).x.length; } }catch(err){}
   b.t = type; if(type==='todo') b.d = b.d||0; else delete b.d;
-  NX.focus = i; NX.caret = ta ? ta.selectionStart : null; nxChanged(); nxBlocks();
+  NX.focus = i; NX.caret = caret; nxChanged(); nxBlocks();
 }
+// Format teks: B / I / U (juga Ctrl/Cmd + B / I / U)
+function nxFmt(cmd){
+  const el = document.querySelector(`.nb-t[data-i="${NX.f}"]`); if(!el) return;
+  if(document.activeElement!==el){ el.focus(); if(NX.rng){ const s=getSelection(); s.removeAllRanges(); s.addRange(NX.rng); } }
+  document.execCommand(cmd, false, null);
+  nxSync(el); nxToolsMark();
+}
+document.addEventListener('selectionchange', ()=>{
+  if(typeof NX==='undefined' || NX.view!=='page') return;
+  const s = getSelection(); if(!s || !s.rangeCount) return;
+  const r = s.getRangeAt(0), n = r.startContainer, el = (n.nodeType===3 ? n.parentElement : n);
+  const t = el && el.closest ? el.closest('.nb-t') : null; if(!t) return;
+  NX.f = +t.dataset.i; NX.rng = r.cloneRange(); nxToolsMark();
+});
 function nxToggleB(i){ const b = NX.blocks[i]; b.d = b.d ? 0 : 1; nxChanged(); nxBlocks(); }
 function nxAppend(){
   const last = NX.blocks[NX.blocks.length-1];

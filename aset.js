@@ -8,7 +8,7 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 const uid=()=>'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const rp=n=>fmtRp(n);
 const KOND=['Baik','Rusak Ringan','Rusak Berat'];
-const KAT={Elektronik:4,Perabot:8,Kendaraan:8,Peralatan:4,Bangunan:20,Tanah:0,Lainnya:4}; // umur manfaat (tahun); 0 = tidak disusutkan
+const KAT={Elektronik:4,Perabot:8,Kendaraan:8,Peralatan:4,Bangunan:20,Tanah:0,Lainnya:4,Pakaian:2,Perhiasan:0}; // umur manfaat (tahun); 0 = tidak disusutkan
 const CARA=[['beli','Beli'],['hibah','Hibah'],['lain','Lainnya / saldo awal']];
 const S={assets:[],stock:[],moves:[],audits:[],tab:'aset',q:'',cf:'all',draft:{},form:null,loaded:false};
 const A=window.ASET={};
